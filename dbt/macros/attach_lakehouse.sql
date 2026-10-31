@@ -8,8 +8,8 @@
   {%- set endpoint = env_var('LAKEHOUSE_S3_ENDPOINT', '') | replace('http://', '') | replace('https://', '') -%}
   {%- if endpoint -%}
     CREATE OR REPLACE SECRET lakehouse_s3 (
-      TYPE S3, KEY_ID '{{ env_var("AWS_ACCESS_KEY_ID") }}',
-      SECRET '{{ env_var("AWS_SECRET_ACCESS_KEY") }}', REGION '{{ env_var("AWS_REGION", "us-east-1") }}',
+      TYPE S3, KEY_ID '{{ env_var("AWS_ACCESS_KEY_ID", "") }}',
+      SECRET '{{ env_var("AWS_SECRET_ACCESS_KEY", "") }}', REGION '{{ env_var("AWS_REGION", "us-east-1") }}',
       ENDPOINT '{{ endpoint }}', URL_STYLE 'path', USE_SSL false
     );
   {%- else -%}

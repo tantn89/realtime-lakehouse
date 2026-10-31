@@ -117,6 +117,44 @@ services:
     volumes: [checkpoints:/checkpoints]
     command: ["python", "-m", "wiki_lakehouse.streaming"]
 
+  # SQL endpoint for orchestration: Dagster runs Iceberg maintenance through it.
+  spark-connect:
+    image: realtime-lakehouse/spark:local
+    restart: unless-stopped
+    depends_on:
+      iceberg-rest: {condition: service_started}
+      stream: {condition: service_started}  # same image; built by the stream service
+    environment: *spark-env
+    command: ["python", "-m", "wiki_lakehouse.spark_connect_server"]
+
+  dagster-webserver:
+    build: {context: ., dockerfile: docker/orchestration/Dockerfile}
+    image: realtime-lakehouse/orchestration:local
+    restart: unless-stopped
+    depends_on:
+      iceberg-rest: {condition: service_started}
+    environment: &orchestration-env
+      <<: *s3-env
+      LAKEHOUSE_CATALOG_URI: http://iceberg-rest:8181
+      LAKEHOUSE_S3_ENDPOINT: http://seaweedfs:8333
+      LAKEHOUSE_KAFKA_BOOTSTRAP: redpanda:9092
+      LAKEHOUSE_SPARK_CONNECT: sc://spark-connect:15002
+    ports: ["3000:3000"]
+    volumes: [dagster-home:/dagster_home, gold:/gold]
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000",
+              "-m", "wiki_lakehouse.orchestration.definitions"]
+
+  # Runs schedules; jobs execute in this container.
+  dagster-daemon:
+    image: realtime-lakehouse/orchestration:local
+    restart: unless-stopped
+    depends_on:
+      dagster-webserver: {condition: service_started}  # same image, built by the webserver
+      spark-connect: {condition: service_started}
+    environment: *orchestration-env
+    volumes: [dagster-home:/dagster_home, gold:/gold]
+    command: ["dagster-daemon", "run", "-m", "wiki_lakehouse.orchestration.definitions"]
+
   # Toolbox for one-off Spark commands (smoke check, SQL, tests):
   #   docker compose run --rm spark python -m wiki_lakehouse.smoke_check
   spark:
@@ -128,6 +166,8 @@ services:
     command: ["python", "-m", "wiki_lakehouse.smoke_check"]
 
 volumes:
+  dagster-home:
+  gold:
   producer-state:
   redpanda:
   seaweedfs:

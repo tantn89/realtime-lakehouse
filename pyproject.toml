@@ -38,6 +38,12 @@ strict = true
 files = ["src"]
 ignore_missing_imports = true
 
+# Dagster and dagster-dbt live in the orchestration image, not in the dev environment, so
+# their decorators are untyped here.
+[[tool.mypy.overrides]]
+module = "wiki_lakehouse.orchestration.*"
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

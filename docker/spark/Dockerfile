@@ -21,6 +21,7 @@ RUN cd "$(python -c 'import pyspark, os; print(os.path.join(os.path.dirname(pysp
       org/apache/iceberg/iceberg-aws-bundle/${ICEBERG}/iceberg-aws-bundle-${ICEBERG}.jar \
       org/apache/spark/spark-sql-kafka-0-10_2.12/${SPARK}/spark-sql-kafka-0-10_2.12-${SPARK}.jar \
       org/apache/spark/spark-token-provider-kafka-0-10_2.12/${SPARK}/spark-token-provider-kafka-0-10_2.12-${SPARK}.jar \
+      org/apache/spark/spark-connect_2.12/${SPARK}/spark-connect_2.12-${SPARK}.jar \
       org/apache/kafka/kafka-clients/3.4.1/kafka-clients-3.4.1.jar \
       org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar; \
     do curl -fsSLO "${MAVEN}/${jar}"; done
