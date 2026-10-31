@@ -1,0 +1,18 @@
+# Overlay for isolated test and benchmark stacks (their own compose project and volumes):
+#   docker compose -p lakehouse-it -f docker-compose.yml -f docker-compose.it.yml ...
+# No published ports, so it runs next to the dev stack; small batches so a crash lands
+# mid-stream instead of after everything was already committed.
+services:
+  redpanda:
+    ports: !reset []
+  seaweedfs:
+    ports: !reset []
+  iceberg-rest:
+    ports: !reset []
+  dagster-webserver:
+    ports: !reset []
+  stream:
+    restart: "no"
+    environment:
+      LAKEHOUSE_MAX_OFFSETS: ${LAKEHOUSE_MAX_OFFSETS:-500}
+      LAKEHOUSE_TRIGGER: ${LAKEHOUSE_TRIGGER:-2 seconds}

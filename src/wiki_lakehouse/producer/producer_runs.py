@@ -64,7 +64,7 @@ def read_last_event_id(state_file: Path | None) -> str | None:
     return None
 
 
-def _retime(body: str, now: datetime, id_prefix: str) -> str:
+def retime_event(body: str, now: datetime, id_prefix: str) -> str:
     """Set the event time to `now` and prefix its id, so the event looks like new traffic."""
     try:
         event = json.loads(body)
@@ -78,27 +78,34 @@ def _retime(body: str, now: datetime, id_prefix: str) -> str:
     return json.dumps(event, ensure_ascii=False)
 
 
+def _loop_prefix(id_prefix: str | None, loop: int) -> str:
+    if id_prefix:
+        return f"{id_prefix}{loop}-"
+    return f"replay{loop}-" if loop else ""  # loop 0 keeps the recorded ids
+
+
 def replay_bodies(
     path: Path,
     *,
     rate_per_s: float | None = None,
     loops: int = 1,
     shift_to_now: bool = False,
+    id_prefix: str | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Iterator[str]:
     """Bodies from a recording, optionally paced to `rate_per_s` and re-timestamped.
 
     Each loop gives events fresh ids when shifting time, so a multi-loop replay looks like
-    new traffic rather than duplicates of the first pass.
+    new traffic rather than duplicates of the first pass. `id_prefix` prefixes every loop,
+    including the first, so separate replays (benchmark phases) never collide either.
     """
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     start, sent = clock(), 0
     for loop in range(loops):
         for body in lines:
             if shift_to_now:
-                prefix = f"replay{loop}-" if loop else ""
-                body = _retime(body, datetime.now(timezone.utc), prefix)
+                body = retime_event(body, datetime.now(timezone.utc), _loop_prefix(id_prefix, loop))
             if rate_per_s:
                 due = start + sent / rate_per_s
                 if (wait := due - clock()) > 0:

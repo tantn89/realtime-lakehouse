@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
+import time
 from pathlib import Path
 
 from wiki_lakehouse.producer.kafka_publisher import KafkaPublisher
@@ -39,6 +41,7 @@ def main() -> None:
     replay.add_argument("--loops", type=int, default=1)
     replay.add_argument("--shift-to-now", action="store_true",
                         help="Rewrite event times to now (for freshness measurements).")
+    replay.add_argument("--id-prefix", help="Prefix for event ids (keeps separate replays unique).")
     args = parser.parse_args()
 
     publisher = KafkaPublisher(args.bootstrap)
@@ -56,9 +59,15 @@ def main() -> None:
                 recorder.close()
     else:
         bodies = replay_bodies(args.file, rate_per_s=args.rate, loops=args.loops,
-                               shift_to_now=args.shift_to_now)
+                               shift_to_now=args.shift_to_now, id_prefix=args.id_prefix)
+        started = time.monotonic()
         counts = publish_events(bodies, publisher)
-        logging.info("replay done: %s", dict(counts))
+        elapsed = time.monotonic() - started
+        total = sum(counts.values())
+        # The benchmark driver parses this line for the achieved publish rate.
+        print(json.dumps({"published": dict(counts), "seconds": round(elapsed, 2),
+                          "events_per_s": round(total / elapsed, 1) if elapsed else None}),
+              flush=True)
 
 
 if __name__ == "__main__":

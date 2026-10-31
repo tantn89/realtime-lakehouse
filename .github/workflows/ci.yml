@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests scripts
+      - run: mypy
+      - run: pytest
+
+  # Builds the images, runs the Spark unit tests inside the Spark image, then the full
+  # crash-and-verify scenario: SIGKILL the stream mid-backlog and prove exactly-once.
+  spark-and-exactly-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: docker compose -f docker-compose.yml -f docker-compose.it.yml -p lakehouse-it build stream producer
+      - name: Spark unit tests
+        run: >
+          docker compose -f docker-compose.yml -f docker-compose.it.yml -p lakehouse-it
+          run --rm --no-deps -v "$PWD/tests:/app/tests" -v "$PWD/data/recordings:/app/data/recordings"
+          spark pytest -q tests/test_edit_transforms.py
+      - name: Crash the stream and prove exactly-once
+        run: python3 scripts/prove_exactly_once.py

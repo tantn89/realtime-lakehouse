@@ -40,6 +40,10 @@ def iceberg_conf(settings: LakehouseSettings) -> dict[str, str]:
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         prefix: "org.apache.iceberg.spark.SparkCatalog",
         f"{prefix}.warehouse": settings.warehouse,
+        # Iceberg caches table metadata per session and expires it after *access*, so a
+        # process polling a table every few seconds never sees new commits. Other processes
+        # write these tables continuously; always read the current snapshot.
+        f"{prefix}.cache-enabled": "false",
         # ResolvingFileIO picks the FileIO per path scheme: S3 for table files, Hadoop for the
         # local checkpoint directory, where Iceberg's streaming source writes its offsets.
         f"{prefix}.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
