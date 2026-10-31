@@ -13,7 +13,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-RUN pip install --no-cache-dir pyspark==${SPARK}
+# pytest is here so the Spark unit tests run in the same image as the jobs (they need Java).
+RUN pip install --no-cache-dir pyspark==${SPARK} pytest==8.3.3
 RUN cd "$(python -c 'import pyspark, os; print(os.path.join(os.path.dirname(pyspark.__file__), "jars"))')" \
  && for jar in \
       org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/${ICEBERG}/iceberg-spark-runtime-3.5_2.12-${ICEBERG}.jar \

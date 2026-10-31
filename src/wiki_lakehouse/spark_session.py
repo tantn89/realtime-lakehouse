@@ -40,7 +40,9 @@ def iceberg_conf(settings: LakehouseSettings) -> dict[str, str]:
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         prefix: "org.apache.iceberg.spark.SparkCatalog",
         f"{prefix}.warehouse": settings.warehouse,
-        f"{prefix}.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+        # ResolvingFileIO picks the FileIO per path scheme: S3 for table files, Hadoop for the
+        # local checkpoint directory, where Iceberg's streaming source writes its offsets.
+        f"{prefix}.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
         "spark.sql.defaultCatalog": CATALOG,
     }
     if settings.catalog_type == "glue":
@@ -54,11 +56,21 @@ def iceberg_conf(settings: LakehouseSettings) -> dict[str, str]:
     return conf
 
 
-def build_spark(app_name: str, settings: LakehouseSettings | None = None) -> SparkSession:
+def build_spark(
+    app_name: str,
+    settings: LakehouseSettings | None = None,
+    extra_conf: dict[str, str] | None = None,
+) -> SparkSession:
     settings = settings or LakehouseSettings.from_env()
+    conf = {
+        **iceberg_conf(settings),
+        # Small cluster: fewer shuffle partitions than the default 200 avoids tiny files
+        # and tiny state stores.
+        "spark.sql.shuffle.partitions": "4",
+        "spark.sql.session.timeZone": "UTC",
+        **(extra_conf or {}),
+    }
     builder = SparkSession.builder.appName(app_name)
-    for key, value in iceberg_conf(settings).items():
+    for key, value in conf.items():
         builder = builder.config(key, value)
-    # Small local cluster: fewer shuffle partitions than the default 200 avoids tiny files.
-    builder = builder.config("spark.sql.shuffle.partitions", "4")
     return builder.getOrCreate()

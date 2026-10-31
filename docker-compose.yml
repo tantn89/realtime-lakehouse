@@ -70,13 +70,26 @@ services:
       - aws --endpoint-url http://seaweedfs:8333 s3api head-bucket --bucket warehouse 2>/dev/null
         || aws --endpoint-url http://seaweedfs:8333 s3 mb s3://warehouse
 
+  # Catalog state (which metadata file is current for each table). Postgres, not SQLite:
+  # three streams commit concurrently and SQLite fails them with "database is locked".
+  catalog-db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: iceberg
+      POSTGRES_USER: iceberg
+      POSTGRES_PASSWORD: iceberg-local-only
+    volumes: [catalog:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iceberg -d iceberg"]
+      interval: 5s
+      retries: 30
+
   iceberg-rest:
     image: tabulario/iceberg-rest:1.6.0
-    # The named volume is root-owned; the image's default user cannot create the SQLite file.
-    user: "0"
     restart: unless-stopped
     depends_on:
       create-bucket: {condition: service_completed_successfully}
+      catalog-db: {condition: service_healthy}
     ports: ["8181:8181"]
     environment:
       <<: *s3-env
@@ -84,26 +97,35 @@ services:
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://seaweedfs:8333
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
-      # Persist table metadata pointers across restarts (the image default is in-memory).
-      CATALOG_URI: jdbc:sqlite:file:/catalog/iceberg_catalog.db
-      CATALOG_JDBC_USER: user
-      CATALOG_JDBC_PASSWORD: password
-    volumes: [catalog:/catalog]
+      CATALOG_URI: jdbc:postgresql://catalog-db:5432/iceberg
+      CATALOG_JDBC_USER: iceberg
+      CATALOG_JDBC_PASSWORD: iceberg-local-only
 
-  spark:
+  stream:
     build: {context: ., dockerfile: docker/spark/Dockerfile}
     image: realtime-lakehouse/spark:local
+    restart: unless-stopped
     depends_on:
-      redpanda: {condition: service_healthy}
+      create-topics: {condition: service_completed_successfully}
       iceberg-rest: {condition: service_started}
-    environment:
+    environment: &spark-env
       <<: *s3-env
       LAKEHOUSE_CATALOG_URI: http://iceberg-rest:8181
       LAKEHOUSE_S3_ENDPOINT: http://seaweedfs:8333
       LAKEHOUSE_WAREHOUSE: s3://warehouse/
       LAKEHOUSE_KAFKA_BOOTSTRAP: redpanda:9092
     volumes: [checkpoints:/checkpoints]
-    command: ["sleep", "infinity"]
+    command: ["python", "-m", "wiki_lakehouse.streaming"]
+
+  # Toolbox for one-off Spark commands (smoke check, SQL, tests):
+  #   docker compose run --rm spark python -m wiki_lakehouse.smoke_check
+  spark:
+    image: realtime-lakehouse/spark:local
+    profiles: [tools]
+    depends_on:
+      iceberg-rest: {condition: service_started}
+    environment: *spark-env
+    command: ["python", "-m", "wiki_lakehouse.smoke_check"]
 
 volumes:
   producer-state:
