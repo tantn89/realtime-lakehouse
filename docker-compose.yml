@@ -1,0 +1,89 @@
+# Local lakehouse: Kafka-compatible broker, S3-compatible storage, Iceberg REST catalog, Spark.
+#   docker compose up -d --build
+# Credentials below are local-only placeholders for the throwaway S3 store, not secrets.
+
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: lakehouse
+  AWS_SECRET_ACCESS_KEY: lakehouse-local-only
+  AWS_REGION: us-east-1
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --mode dev-container
+      - --smp 1
+      - --memory 1G
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    ports: ["19092:19092"]
+    volumes: [redpanda:/var/lib/redpanda/data]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      retries: 30
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -master.volumeSizeLimitMB=1024
+    ports: ["8333:8333"]
+    volumes:
+      - seaweedfs:/data
+      - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      # 127.0.0.1, not localhost: localhost resolves to ::1 and the S3 server listens on IPv4.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz || exit 1"]
+      interval: 5s
+      retries: 30
+
+  create-bucket:
+    image: amazon/aws-cli:2.18.0
+    depends_on:
+      seaweedfs: {condition: service_healthy}
+    environment: *s3-env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - aws --endpoint-url http://seaweedfs:8333 s3api head-bucket --bucket warehouse 2>/dev/null
+        || aws --endpoint-url http://seaweedfs:8333 s3 mb s3://warehouse
+
+  iceberg-rest:
+    image: tabulario/iceberg-rest:1.6.0
+    # The named volume is root-owned; the image's default user cannot create the SQLite file.
+    user: "0"
+    restart: unless-stopped
+    depends_on:
+      create-bucket: {condition: service_completed_successfully}
+    ports: ["8181:8181"]
+    environment:
+      <<: *s3-env
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://seaweedfs:8333
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      # Persist table metadata pointers across restarts (the image default is in-memory).
+      CATALOG_URI: jdbc:sqlite:file:/catalog/iceberg_catalog.db
+      CATALOG_JDBC_USER: user
+      CATALOG_JDBC_PASSWORD: password
+    volumes: [catalog:/catalog]
+
+  spark:
+    build: {context: ., dockerfile: docker/spark/Dockerfile}
+    image: realtime-lakehouse/spark:local
+    depends_on:
+      redpanda: {condition: service_healthy}
+      iceberg-rest: {condition: service_started}
+    environment:
+      <<: *s3-env
+      LAKEHOUSE_CATALOG_URI: http://iceberg-rest:8181
+      LAKEHOUSE_S3_ENDPOINT: http://seaweedfs:8333
+      LAKEHOUSE_WAREHOUSE: s3://warehouse/
+      LAKEHOUSE_KAFKA_BOOTSTRAP: redpanda:9092
+    volumes: [checkpoints:/checkpoints]
+    command: ["sleep", "infinity"]
+
+volumes:
+  redpanda:
+  seaweedfs:
+  catalog:
+  checkpoints:

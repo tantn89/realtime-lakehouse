@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wiki-lakehouse"
+version = "0.1.0"
+description = "Streaming lakehouse over live Wikipedia edits: Redpanda, Spark Structured Streaming, Iceberg, dbt, Dagster."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Tan Tran" }]
+# PySpark comes from the Spark image at runtime; install the `spark` extra for local tests.
+dependencies = []
+
+[project.optional-dependencies]
+spark = ["pyspark==3.5.3"]
+dev = ["pyspark==3.5.3", "pytest>=8.3", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wiki_lakehouse"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
