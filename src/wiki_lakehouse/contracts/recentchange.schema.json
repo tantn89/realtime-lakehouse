@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tantn89/realtime-lakehouse/contracts/recentchange.schema.json",
+  "title": "Wikimedia recentchange event (fields this pipeline depends on)",
+  "description": "Producer-side data contract. Events that fail it go to the dead-letter topic instead of the lakehouse. Extra fields are allowed: upstream may add fields without breaking us.",
+  "type": "object",
+  "required": ["meta", "type", "namespace", "title", "timestamp", "user", "bot", "wiki", "server_name"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["id", "dt", "domain", "stream"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "dt": {"type": "string", "format": "date-time"},
+        "domain": {"type": "string"},
+        "stream": {"const": "mediawiki.recentchange"}
+      }
+    },
+    "id": {"type": ["integer", "null"]},
+    "type": {"enum": ["edit", "new", "log", "categorize", "external"]},
+    "namespace": {"type": "integer"},
+    "title": {"type": "string"},
+    "timestamp": {"type": "integer", "minimum": 1000000000},
+    "user": {"type": "string"},
+    "bot": {"type": "boolean"},
+    "wiki": {"type": "string", "minLength": 1},
+    "server_name": {"type": "string"},
+    "minor": {"type": "boolean"},
+    "patrolled": {"type": "boolean"},
+    "length": {
+      "type": "object",
+      "properties": {"old": {"type": ["integer", "null"]}, "new": {"type": ["integer", "null"]}}
+    },
+    "revision": {
+      "type": "object",
+      "properties": {"old": {"type": ["integer", "null"]}, "new": {"type": ["integer", "null"]}}
+    }
+  }
+}

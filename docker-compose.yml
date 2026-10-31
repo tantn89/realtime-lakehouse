@@ -24,6 +24,29 @@ services:
       interval: 5s
       retries: 30
 
+  create-topics:
+    image: redpandadata/redpanda:v24.2.7
+    depends_on:
+      redpanda: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "-c"]
+    # 3 partitions keyed by wiki; 7-day retention so a stopped pipeline can catch up.
+    command:
+      - rpk topic create wiki.recentchange -p 3 -c retention.ms=604800000 -X brokers=redpanda:9092 || true;
+        rpk topic create wiki.recentchange.dlq -p 1 -X brokers=redpanda:9092 || true
+
+  producer:
+    build: {context: ., dockerfile: docker/producer/Dockerfile}
+    image: realtime-lakehouse/producer:local
+    restart: unless-stopped
+    depends_on:
+      create-topics: {condition: service_completed_successfully}
+    environment:
+      LAKEHOUSE_KAFKA_BOOTSTRAP: redpanda:9092
+      # Wikimedia policy: identify the tool and a contact. Override for your own runs.
+      WIKIMEDIA_USER_AGENT: ${WIKIMEDIA_USER_AGENT:-realtime-lakehouse/0.1 (https://github.com/tantn89/realtime-lakehouse)}
+    volumes: [producer-state:/state]
+    command: ["live"]
+
   seaweedfs:
     image: chrislusf/seaweedfs:3.80
     command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -master.volumeSizeLimitMB=1024
@@ -83,6 +106,7 @@ services:
     command: ["sleep", "infinity"]
 
 volumes:
+  producer-state:
   redpanda:
   seaweedfs:
   catalog:

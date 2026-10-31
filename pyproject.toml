@@ -14,8 +14,12 @@ authors = [{ name = "Tan Tran" }]
 dependencies = []
 
 [project.optional-dependencies]
+producer = ["httpx>=0.27", "confluent-kafka>=2.5", "jsonschema>=4.23"]
 spark = ["pyspark==3.5.3"]
-dev = ["pyspark==3.5.3", "pytest>=8.3", "ruff>=0.6", "mypy>=1.11"]
+dev = [
+  "httpx>=0.27", "jsonschema>=4.23",
+  "pytest>=8.3", "respx>=0.21", "ruff>=0.6", "mypy>=1.11", "types-jsonschema",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wiki_lakehouse"]

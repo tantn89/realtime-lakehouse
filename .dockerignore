@@ -4,6 +4,8 @@
 .pytest_cache
 .mypy_cache
 .ruff_cache
-data
 plans
 terraform
+# Recordings can be large; only the committed sample ships in images (for replay demos).
+data/**
+!data/recordings/sample.jsonl
