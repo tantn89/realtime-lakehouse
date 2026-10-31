@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: edits_per_minute
+    description: Edit volume per wiki per minute, split by bots and humans.
+    columns:
+      - name: event_minute
+        tests: [not_null]
+      - name: wiki
+        tests: [not_null]
+      - name: edits
+        tests: [not_null]
+
+  - name: bot_activity_daily
+    description: Daily bot share and active editors per wiki.
+    columns:
+      - name: bot_share
+        tests: [not_null]
+
+  - name: trending_articles
+    description: Top 50 articles by distinct human editors in the latest hour.
+    columns:
+      - name: trend_rank
+        tests: [unique, not_null]
+
+  - name: editor_sessions_daily
+    description: Session counts and lengths per day, wiki and editor type.

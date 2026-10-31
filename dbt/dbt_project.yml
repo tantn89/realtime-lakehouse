@@ -1,0 +1,24 @@
+name: wiki_lakehouse
+version: "0.1.0"
+config-version: 2
+profile: wiki_lakehouse
+
+model-paths: [models]
+test-paths: [tests]
+macro-paths: [macros]
+target-path: target
+clean-targets: [target, dbt_packages]
+
+# Silver lives in Iceberg (attached read-only as `lake`); gold marts are materialised in a
+# DuckDB file that serves dashboards and agents and can be rebuilt from silver at any time.
+on-run-start:
+  - "{{ attach_lakehouse() }}"
+
+models:
+  wiki_lakehouse:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: gold

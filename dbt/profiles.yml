@@ -1,0 +1,10 @@
+wiki_lakehouse:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: "{{ env_var('LAKEHOUSE_GOLD_DB', 'lakehouse.duckdb') }}"
+      extensions: [httpfs, iceberg]
+      settings:
+        TimeZone: UTC
+      threads: 2
