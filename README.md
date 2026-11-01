@@ -147,6 +147,10 @@ docs/              Architecture, deployment, design guidelines, roadmap
 - The Python producer tops out around 10k events/s on one process, so the benchmark did not
   saturate the pipeline.
 - The CI proof kills the Spark stream but not the producer.
+- Exactly-once holds only while the checkpoint survives. Iceberg's batch dedup keys on the
+  streaming query id, which lives in the checkpoint. If a node loss takes the checkpoint too, the
+  restarted query gets a new id and replays without dedup, and nothing turns red. The crash test
+  covers a crash with the checkpoint intact; it does not cover checkpoint loss.
 - Orchestration modules are checked against a live stack and in CI (`dagster definitions
   validate`), but they have no unit tests yet.
 - `remove_orphan_files` is not scheduled: it needs the Hadoop S3A connector in the Spark image.
