@@ -1,0 +1,26 @@
+#!/bin/bash
+# First-boot bootstrap: install Docker, fetch the code bundle, start the pipeline on AWS.
+# Log: /var/log/lakehouse-bootstrap.log
+set -euxo pipefail
+exec > >(tee -a /var/log/lakehouse-bootstrap.log) 2>&1
+
+# Cost guard: power off after the run window even if nobody runs terraform destroy.
+shutdown -h +${max_minutes}
+
+curl -fsSL https://get.docker.com | sh
+snap install aws-cli --classic
+
+mkdir -p /opt/lakehouse
+cd /opt/lakehouse
+/snap/bin/aws s3 cp "s3://${bucket}/${bundle_key}" - | tar -xz
+
+cat > .env <<EOF
+AWS_REGION=${region}
+LAKEHOUSE_WAREHOUSE=s3://${bucket}/warehouse/
+LAKEHOUSE_GLUE_ACCOUNT_ID=${account_id}
+EOF
+
+docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build \
+  producer stream spark-connect dagster-webserver dagster-daemon
+
+echo "lakehouse bootstrap complete"

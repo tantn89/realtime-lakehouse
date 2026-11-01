@@ -21,5 +21,5 @@ USER lakehouse
 ENV DBT_PROFILES_DIR=/app/dbt DBT_PROJECT_DIR=/app/dbt DAGSTER_HOME=/dagster_home \
     LAKEHOUSE_GOLD_DB=/gold/lakehouse.duckdb
 # Bake the DuckDB extensions and the dbt manifest Dagster reads into the image.
-RUN python -c "import duckdb; c = duckdb.connect(); [c.install_extension(e) for e in ('httpfs', 'iceberg')]" \
+RUN python -c "import duckdb; c = duckdb.connect(); [c.install_extension(e) for e in ('httpfs', 'iceberg', 'aws')]" \
  && cd dbt && dbt parse --quiet

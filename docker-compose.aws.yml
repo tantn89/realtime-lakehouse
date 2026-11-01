@@ -1,0 +1,43 @@
+# AWS run: the same pipeline, with S3 + the Glue Data Catalog in place of SeaweedFS + the REST
+# catalog. Credentials come from the EC2 instance profile, so the local placeholder keys are
+# dropped (environment is overridden, not merged) and no secret is written anywhere.
+#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build \
+#     producer stream spark-connect dagster-webserver dagster-daemon
+# Values come from .env, written by the instance bootstrap (terraform/user-data.sh.tftpl).
+
+x-aws-env: &aws-env
+  AWS_REGION: ${AWS_REGION:?set AWS_REGION}
+  LAKEHOUSE_CATALOG_TYPE: glue
+  LAKEHOUSE_WAREHOUSE: ${LAKEHOUSE_WAREHOUSE:?set LAKEHOUSE_WAREHOUSE}
+  LAKEHOUSE_GLUE_ACCOUNT_ID: ${LAKEHOUSE_GLUE_ACCOUNT_ID:?set LAKEHOUSE_GLUE_ACCOUNT_ID}
+  LAKEHOUSE_KAFKA_BOOTSTRAP: redpanda:9092
+
+services:
+  stream:
+    depends_on: !override
+      create-topics: {condition: service_completed_successfully}
+    environment: !override
+      <<: *aws-env
+
+  spark-connect:
+    depends_on: !override
+      stream: {condition: service_started}
+    environment: !override
+      <<: *aws-env
+
+  dagster-webserver:
+    depends_on: !override
+      stream: {condition: service_started}
+    environment: !override
+      <<: *aws-env
+      LAKEHOUSE_SPARK_CONNECT: sc://spark-connect:15002
+
+  dagster-daemon:
+    environment: !override
+      <<: *aws-env
+      LAKEHOUSE_SPARK_CONNECT: sc://spark-connect:15002
+
+  spark:
+    depends_on: !reset {}
+    environment: !override
+      <<: *aws-env
