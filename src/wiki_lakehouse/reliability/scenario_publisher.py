@@ -6,9 +6,15 @@
     python -m wiki_lakehouse.reliability.scenario_publisher late --count 100 --minutes 30
 
 - base: the recorded sample, re-timed to now, with a fresh id prefix per loop (all unique);
-- duplicates: loop 0 again with the same ids, as a producer resume would resend them;
+- duplicates: loop 0 again with the same ids, re-timed to the current time. A real resume
+  would resend the original `dt` too; deduplication keys on the id only, so the outcome is the
+  same, and the fresh time keeps the copies inside the watermark;
 - poison: events that break the data contract (they must land in the dead-letter topic);
 - late: unique events stamped `minutes` in the past, beyond the 10-minute watermark.
+
+Silver keeps only `edit` and `new` events, so the expected silver count of a scenario is the
+number of those types in the sample per loop; bronze and Kafka receive every event.
+Prints one JSON summary line; exits 1 if Kafka rejected or never confirmed any message.
 """
 
 from __future__ import annotations
@@ -16,11 +22,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from wiki_lakehouse.producer.kafka_publisher import KafkaPublisher
-from wiki_lakehouse.producer.producer_runs import publish_events, retime_event
+from wiki_lakehouse.producer.producer_runs import publish_summary, retime_event
 
 SAMPLE = Path(os.environ.get("SCENARIO_SAMPLE", "data/recordings/sample.jsonl"))
 
@@ -39,8 +46,12 @@ def duplicate_events() -> list[str]:
 
 
 def late_events(count: int, minutes: int) -> list[str]:
+    sample = _sample()
+    if count > len(sample):
+        raise ValueError(f"late --count {count} exceeds the sample size ({len(sample)}); "
+                         "late events reuse sample ids, so they cannot repeat")
     then = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-    return [retime_event(line, then, "late-") for line in _sample()[:count]]
+    return [retime_event(line, then, "late-") for line in sample[:count]]
 
 
 def poison_events(count: int) -> list[str]:
@@ -66,16 +77,21 @@ def main() -> None:
     late.add_argument("--minutes", type=int, default=30)
     args = parser.parse_args()
 
-    if args.kind == "base":
-        bodies = base_events(args.loops)
-    elif args.kind == "duplicates":
-        bodies = duplicate_events()
-    elif args.kind == "poison":
-        bodies = poison_events(args.count)
-    else:
-        bodies = late_events(args.count, args.minutes)
-    counts = publish_events(bodies, KafkaPublisher(args.bootstrap))
-    print(json.dumps({"scenario": args.kind, **counts}))
+    try:
+        if args.kind == "base":
+            bodies = base_events(args.loops)
+        elif args.kind == "duplicates":
+            bodies = duplicate_events()
+        elif args.kind == "poison":
+            bodies = poison_events(args.count)
+        else:
+            bodies = late_events(args.count, args.minutes)
+    except ValueError as e:
+        parser.error(str(e))
+    summary, delivered = publish_summary(bodies, KafkaPublisher(args.bootstrap))
+    print(json.dumps({"scenario": args.kind, **summary}), flush=True)
+    if not delivered:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import lru_cache
 from importlib import resources
 from typing import Any
@@ -36,9 +37,30 @@ def _validator() -> Draft202012Validator:
     return Draft202012Validator(json.loads(schema))
 
 
+def _dt_error(event: dict[str, Any]) -> str | None:
+    """A calendar check for `meta.dt`, on top of the schema's shape `pattern`.
+
+    jsonschema ignores `format: date-time` without a format checker (which would also need
+    rfc3339-validator), so the schema pins the shape the downstream Spark parser accepts and
+    this rejects impossible dates such as month 13 that the pattern lets through.
+    """
+    meta = event.get("meta")
+    dt = meta.get("dt") if isinstance(meta, dict) else None
+    if not isinstance(dt, str):
+        return None  # missing or mistyped: the schema already reports it
+    try:
+        datetime.fromisoformat(dt.replace("Z", "+00:00"))  # 3.10 does not accept "Z"
+    except ValueError:
+        return f"meta/dt: {dt!r} is not a valid timestamp"
+    return None
+
+
 def contract_errors(event: dict[str, Any]) -> list[str]:
     errors = sorted(_validator().iter_errors(event), key=lambda e: list(e.path))
-    return [f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in errors]
+    messages = [f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in errors]
+    if not any(m.startswith("meta/dt:") for m in messages) and (dt_error := _dt_error(event)):
+        messages.append(dt_error)
+    return messages
 
 
 def route(raw: str) -> Routed | None:
@@ -49,7 +71,8 @@ def route(raw: str) -> Routed | None:
         return Routed(DLQ_TOPIC, None, raw, {"error": f"invalid JSON: {e.msg}"})
     if not isinstance(event, dict):
         return Routed(DLQ_TOPIC, None, raw, {"error": "event is not a JSON object"})
-    if event.get("meta", {}).get("domain") == "canary":
+    meta = event.get("meta")  # may be any JSON type here: the contract has not been checked yet
+    if isinstance(meta, dict) and meta.get("domain") == "canary":
         return None
     errors = contract_errors(event)
     if errors:

@@ -12,6 +12,8 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -49,8 +51,24 @@ def parse_sse(lines: Iterable[str]) -> Iterator[SseEvent]:
             event_id = value
         elif field == "event":
             event_type = value
-    if data:
-        yield SseEvent(event_id, event_type, "\n".join(data))
+    # Fields without a closing blank line are an incomplete event: the SSE spec discards them.
+    # Emitting it would publish a truncated body and move the resume position past the real one.
+
+
+def _retry_after_s(response: httpx.Response) -> float | None:
+    """The server's Retry-After (seconds or an HTTP date), if it sent a usable one."""
+    value = response.headers.get("retry-after")
+    if not value:
+        return None
+    if value.strip().isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
 def stream_events(
@@ -65,6 +83,9 @@ def stream_events(
 ) -> Iterator[SseEvent]:
     """Yield events forever, reconnecting with exponential backoff and Last-Event-ID resume.
 
+    Every reconnect waits, also after a clean close by the server, so a proxy that accepts and
+    immediately closes cannot cause a tight loop. The backoff doubles up to `max_backoff_s` and
+    resets only once an event actually arrives; a Retry-After header lengthens the wait (capped).
     Wikimedia requires a descriptive User-Agent with contact information.
     """
     client = client or httpx.Client(timeout=httpx.Timeout(10.0, read=60.0))
@@ -73,20 +94,26 @@ def stream_events(
         headers = {"User-Agent": user_agent, "Accept": "text/event-stream"}
         if last_event_id:
             headers["Last-Event-ID"] = last_event_id
+        wait = backoff
         try:
             with client.stream("GET", url, headers=headers) as response:
                 response.raise_for_status()
-                backoff = 1.0
                 for event in parse_sse(response.iter_lines()):
+                    backoff = wait = 1.0  # the connection works: start over from a short wait
                     if event.id:
                         last_event_id = event.id
                     if event.event == "message":
                         yield event
-            log.info("stream ended by server; resuming")
+            log.info("stream ended by server; reconnecting in %.0fs", wait)
+        except httpx.HTTPStatusError as e:
+            retry_after = _retry_after_s(e.response)
+            wait = min(max(backoff, retry_after or 0.0), max_backoff_s)
+            log.warning("stream refused (HTTP %d); reconnecting in %.0fs",
+                        e.response.status_code, wait)
         except (httpx.HTTPError, httpx.StreamError) as e:
-            log.warning("stream error (%s); reconnecting in %.0fs", e, backoff)
-            sleep(backoff)
-            backoff = min(backoff * 2, max_backoff_s)
+            log.warning("stream error (%s); reconnecting in %.0fs", e, wait)
         reconnects += 1
         if max_reconnects is not None and reconnects > max_reconnects:
             return
+        sleep(wait)
+        backoff = min(backoff * 2, max_backoff_s)

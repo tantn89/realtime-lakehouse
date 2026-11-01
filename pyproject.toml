@@ -18,7 +18,7 @@ producer = ["httpx>=0.27", "confluent-kafka>=2.5", "jsonschema>=4.23"]
 spark = ["pyspark==3.5.3"]
 dev = [
   "httpx>=0.27", "jsonschema>=4.23",
-  "pytest>=8.3", "respx>=0.21", "ruff>=0.6", "mypy>=1.11", "types-jsonschema",
+  "pytest>=8.3", "ruff>=0.6", "mypy>=1.11", "types-jsonschema",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -35,7 +35,7 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["src"]
+files = ["src", "scripts"]
 ignore_missing_imports = true
 
 # Dagster and dagster-dbt live in the orchestration image, not in the dev environment, so
