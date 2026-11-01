@@ -19,3 +19,4 @@ data/recordings/*.jsonl
 .claude/
 plans/
 terraform.tfvars
+*.tfplan
