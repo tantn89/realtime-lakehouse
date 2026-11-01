@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-11-01T00:38:10+00:00",
+  "run_at": "2026-11-01T04:14:54+00:00",
   "machine": "Windows AMD64, 20 logical CPUs",
   "phase_seconds": 45,
   "phases": [
@@ -8,68 +8,72 @@
       "target_rate": 100,
       "achieved_rate": 100.0,
       "events": 4400,
-      "seen": 4400,
-      "p50_s": 16.2,
+      "silver_expected": 2156,
+      "seen": 2156,
+      "p50_s": 15.4,
       "p95_s": 20.2,
       "p99_s": 20.6,
-      "max_s": 20.8
+      "max_s": 20.9
     },
     {
       "phase": "b1000",
       "target_rate": 1000,
       "achieved_rate": 999.9,
       "events": 44800,
-      "seen": 44800,
-      "p50_s": 15.2,
-      "p95_s": 20.1,
+      "silver_expected": 21952,
+      "seen": 21952,
+      "p50_s": 16.1,
+      "p95_s": 20.2,
       "p99_s": 20.6,
       "max_s": 20.8
     },
     {
       "phase": "b5000",
       "target_rate": 5000,
-      "achieved_rate": 4999.5,
+      "achieved_rate": 4999.6,
       "events": 224800,
-      "seen": 224800,
-      "p50_s": 16.6,
-      "p95_s": 20.7,
-      "p99_s": 21.2,
-      "max_s": 21.4
+      "silver_expected": 110152,
+      "seen": 110152,
+      "p50_s": 15.6,
+      "p95_s": 20.6,
+      "p99_s": 21.1,
+      "max_s": 21.3
     },
     {
       "phase": "b15000",
       "target_rate": 15000,
-      "achieved_rate": 9787.3,
+      "achieved_rate": 9596.3,
       "events": 674800,
-      "seen": 674800,
-      "p50_s": 16.9,
-      "p95_s": 21.4,
-      "p99_s": 21.9,
-      "max_s": 22.2
+      "silver_expected": 330652,
+      "seen": 330652,
+      "p50_s": 16.6,
+      "p95_s": 21.0,
+      "p99_s": 21.6,
+      "max_s": 21.9
     }
   ],
   "compaction": {
     "before": {
-      "files": 21,
-      "row_groups": 21,
-      "avg_kb": 719.0
+      "files": 22,
+      "row_groups": 22,
+      "avg_kb": 378.6
     },
     "after": {
       "files": 1,
-      "row_groups": 3,
-      "avg_kb": 14745.1
+      "row_groups": 2,
+      "avg_kb": 8016.5
     },
-    "seconds": 5.2,
+    "seconds": 3.1,
     "duckdb_before": {
       "label": "before compaction",
-      "silver_rows": 948800,
-      "median_ms": 29.7,
+      "silver_rows": 464912,
+      "median_ms": 22.2,
       "runs": 7
     },
     "duckdb_after": {
       "label": "after compaction",
-      "silver_rows": 948800,
-      "median_ms": 56.0,
+      "silver_rows": 464912,
+      "median_ms": 53.0,
       "runs": 7
     }
   }

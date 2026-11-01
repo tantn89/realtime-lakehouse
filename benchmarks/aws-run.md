@@ -5,11 +5,15 @@ and the Glue Data Catalog for Iceberg (`docker-compose.aws.yml`, `terraform/`). 
 Wikimedia recentchange stream. The run lasted 2 h 10 min, from 01:27 to 03:37 UTC, and the
 infrastructure was destroyed afterwards.
 
+This run predates the silver filter to `edit` and `new` events, so silver held every
+recentchange type (categorize and log too). The counts and rates below are recentchange
+events. Freshness, duplicates and orchestration results do not depend on that filter.
+
 ## Pipeline
 
 | Metric | Value |
 |---|---|
-| Edits ingested (bronze = silver) | 868,073 |
+| Recentchange events ingested (bronze = silver) | 868,073 |
 | Duplicate Kafka offsets in bronze / duplicate events in silver | 0 / 0 |
 | Average / peak rate | 118 edits/s / 7,893 edits in one minute |
 | Bot share | 0.90, mostly one bot run on enwiktionary |
