@@ -60,9 +60,12 @@ def freshness(spark: SparkSession, phases: dict[str, int], timeout_s: int) -> No
 
 
 def file_stats(spark: SparkSession) -> dict[str, float]:
-    row = spark.sql(f"SELECT count(*) AS files, avg(file_size_in_bytes) AS avg_bytes "
+    # split_offsets holds one entry per Parquet row group: the unit readers parallelise on.
+    row = spark.sql(f"SELECT count(*) AS files, avg(file_size_in_bytes) AS avg_bytes, "
+                    f"sum(coalesce(size(split_offsets), 1)) AS row_groups "
                     f"FROM {SILVER_EDITS}.files").collect()[0]
-    return {"files": int(row["files"]), "avg_kb": round(float(row["avg_bytes"] or 0) / 1024, 1)}
+    return {"files": int(row["files"]), "row_groups": int(row["row_groups"] or 0),
+            "avg_kb": round(float(row["avg_bytes"] or 0) / 1024, 1)}
 
 
 def compact(spark: SparkSession) -> None:

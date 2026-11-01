@@ -120,12 +120,13 @@ def render(report: dict[str, object]) -> str:
     if c:
         lines += [
             "",
-            "| Silver layout | Data files | Avg file | DuckDB query (median) |",
-            "|---|---|---|---|",
-            f"| Before compaction | {c['before']['files']:,} | {c['before']['avg_kb']} KB | "
-            f"{c['duckdb_before']['median_ms']} ms |",
+            "| Silver layout | Data files | Row groups | Avg file | DuckDB query (median) |",
+            "|---|---|---|---|---|",
+            f"| Before compaction | {c['before']['files']:,} | {c['before']['row_groups']:,} | "
+            f"{c['before']['avg_kb']} KB | {c['duckdb_before']['median_ms']} ms |",
             f"| After compaction ({c['seconds']} s) | {c['after']['files']:,} | "
-            f"{c['after']['avg_kb']} KB | {c['duckdb_after']['median_ms']} ms |",
+            f"{c['after']['row_groups']:,} | {c['after']['avg_kb']} KB | "
+            f"{c['duckdb_after']['median_ms']} ms |",
         ]
     return "\n".join(lines) + "\n"
 

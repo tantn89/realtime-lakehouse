@@ -13,9 +13,15 @@ SILVER_EDITS = "silver.edits"
 SILVER_SESSIONS = "silver.editor_sessions"
 STREAM_PROGRESS = "ops.stream_progress"
 
-_TABLE_PROPERTIES = """TBLPROPERTIES (
+# Readers parallelise per Parquet row group, not per file. With the 128 MB default a compacted
+# file is a single row group, so DuckDB scans it on one thread and compaction made queries
+# slower. 8 MB row groups keep big files splittable.
+_ROW_GROUP_BYTES = str(8 * 1024 * 1024)
+
+_TABLE_PROPERTIES = f"""TBLPROPERTIES (
     'format-version' = '2',
     'write.parquet.compression-codec' = 'zstd',
+    'write.parquet.row-group-size-bytes' = '{_ROW_GROUP_BYTES}',
     'write.metadata.delete-after-commit.enabled' = 'true',
     'write.metadata.previous-versions-max' = '50'
 )"""
@@ -52,8 +58,26 @@ DDL = {
 }
 
 
+def ensure_namespace(spark: SparkSession, namespace: str) -> None:
+    """CREATE NAMESPACE IF NOT EXISTS that tolerates a concurrent creator.
+
+    The REST catalog checks existence and inserts in two steps, so two processes starting
+    together (stream and smoke check) can both pass the check; the loser gets a server error
+    from the duplicate insert. If the namespace exists afterwards, the goal is met.
+    """
+    try:
+        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {namespace}")
+    except Exception:
+        if not spark.sql(f"SHOW NAMESPACES LIKE '{namespace}'").collect():
+            raise
+
+
 def create_tables(spark: SparkSession) -> None:
     for namespace in {name.split(".")[0] for name in DDL}:
-        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {namespace}")
-    for ddl in DDL.values():
+        ensure_namespace(spark, namespace)
+    for table, ddl in DDL.items():
         spark.sql(ddl)
+        # CREATE IF NOT EXISTS leaves tables from earlier versions untouched; bring the
+        # write layout of existing tables up to date as well.
+        spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES "
+                  f"('write.parquet.row-group-size-bytes' = '{_ROW_GROUP_BYTES}')")

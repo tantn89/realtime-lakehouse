@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 from wiki_lakehouse.spark_session import build_spark
+from wiki_lakehouse.streaming.lakehouse_tables import ensure_namespace
 
 
 def main() -> None:
     spark = build_spark("smoke-check")
-    spark.sql("CREATE NAMESPACE IF NOT EXISTS ops")
+    ensure_namespace(spark, "ops")
     spark.sql("CREATE TABLE IF NOT EXISTS ops.smoke (id INT, note STRING) USING iceberg")
     spark.sql("INSERT INTO ops.smoke VALUES (1, 'written by spark')")
     rows = spark.sql("SELECT count(*) AS n FROM ops.smoke").collect()[0]["n"]

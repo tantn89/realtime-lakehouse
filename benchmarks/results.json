@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-10-31T16:41:40+00:00",
+  "run_at": "2026-11-01T00:38:10+00:00",
   "machine": "Windows AMD64, 20 logical CPUs",
   "phase_seconds": 45,
   "phases": [
@@ -9,10 +9,10 @@
       "achieved_rate": 100.0,
       "events": 4400,
       "seen": 4400,
-      "p50_s": 15.3,
-      "p95_s": 20.1,
-      "p99_s": 20.5,
-      "max_s": 20.7
+      "p50_s": 16.2,
+      "p95_s": 20.2,
+      "p99_s": 20.6,
+      "max_s": 20.8
     },
     {
       "phase": "b1000",
@@ -20,54 +20,56 @@
       "achieved_rate": 999.9,
       "events": 44800,
       "seen": 44800,
-      "p50_s": 16.2,
-      "p95_s": 20.3,
-      "p99_s": 20.7,
-      "max_s": 21.1
+      "p50_s": 15.2,
+      "p95_s": 20.1,
+      "p99_s": 20.6,
+      "max_s": 20.8
     },
     {
       "phase": "b5000",
       "target_rate": 5000,
-      "achieved_rate": 4999.4,
+      "achieved_rate": 4999.5,
       "events": 224800,
       "seen": 224800,
-      "p50_s": 15.8,
-      "p95_s": 20.8,
+      "p50_s": 16.6,
+      "p95_s": 20.7,
       "p99_s": 21.2,
-      "max_s": 22.0
+      "max_s": 21.4
     },
     {
       "phase": "b15000",
       "target_rate": 15000,
-      "achieved_rate": 10535.6,
+      "achieved_rate": 9787.3,
       "events": 674800,
       "seen": 674800,
-      "p50_s": 18.2,
-      "p95_s": 23.0,
-      "p99_s": 23.9,
-      "max_s": 24.2
+      "p50_s": 16.9,
+      "p95_s": 21.4,
+      "p99_s": 21.9,
+      "max_s": 22.2
     }
   ],
   "compaction": {
     "before": {
       "files": 21,
-      "avg_kb": 716.9
+      "row_groups": 21,
+      "avg_kb": 719.0
     },
     "after": {
       "files": 1,
-      "avg_kb": 14805.5
+      "row_groups": 3,
+      "avg_kb": 14745.1
     },
-    "seconds": 3.8,
+    "seconds": 5.2,
     "duckdb_before": {
       "label": "before compaction",
       "silver_rows": 948800,
-      "median_ms": 29.2,
+      "median_ms": 29.7,
       "runs": 7
     },
     "duckdb_after": {
       "label": "after compaction",
       "silver_rows": 948800,
-      "median_ms": 118.8,
+      "median_ms": 56.0,
       "runs": 7
     }
   }
