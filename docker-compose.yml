@@ -143,13 +143,20 @@ services:
     volumes: [dagster-home:/dagster_home, gold:/gold]
     command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000",
               "-m", "wiki_lakehouse.orchestration.definitions"]
+    # Healthy once the instance database exists. The daemon waits for it: on a fresh volume,
+    # two processes migrating the same SQLite schema at once leave it with two alembic heads.
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/server_info')"]
+      interval: 5s
+      retries: 60
 
   # Runs schedules; jobs execute in this container.
   dagster-daemon:
     image: realtime-lakehouse/orchestration:local
     restart: unless-stopped
     depends_on:
-      dagster-webserver: {condition: service_started}  # same image, built by the webserver
+      dagster-webserver: {condition: service_healthy}  # same image; owns the schema migration
       spark-connect: {condition: service_started}
     environment: *orchestration-env
     volumes: [dagster-home:/dagster_home, gold:/gold]
