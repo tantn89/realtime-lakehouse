@@ -9,6 +9,7 @@ which silver absorbs by deduplicating on the Wikimedia event id within the water
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,7 +17,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.streaming import StreamingQuery
 
 from wiki_lakehouse.streaming.edit_transforms import (
-    WATERMARK,
     bronze_to_edits,
     deduplicate_edits,
     edits_to_sessions,
@@ -32,11 +32,19 @@ from wiki_lakehouse.streaming.lakehouse_tables import (
 TOPIC = "wiki.recentchange"
 CHECKPOINTS = os.environ.get("LAKEHOUSE_CHECKPOINTS", "/checkpoints")
 TRIGGER = os.environ.get("LAKEHOUSE_TRIGGER", "10 seconds")
-# Iceberg maintenance (compaction, snapshot expiry) creates replace/delete snapshots;
-# downstream streaming reads must skip them instead of failing.
+# Options for the Iceberg-to-Iceberg hops (bronze -> silver -> sessions).
+# - Iceberg's streaming source always skips REPLACE snapshots (compaction), and snapshot
+#   expiry commits no snapshot at all. The two skip options only matter for DELETE / OVERWRITE
+#   commits, which nothing in this repo issues; without them such a commit would fail the
+#   query. Consequence: a future MERGE/UPDATE/DELETE on bronze would never reach silver.
+# - The source resumes from the checkpointed snapshot, so it can only replay history that
+#   snapshot expiry has kept.
+# - max-files bounds a catch-up micro-batch (new checkpoint, long downtime). Do not also set
+#   streaming-max-rows-per-micro-batch: Iceberg 1.6.1 mixes the two limits up when both are set.
 _ICEBERG_STREAM_READ = {
     "streaming-skip-overwrite-snapshots": "true",
     "streaming-skip-delete-snapshots": "true",
+    "streaming-max-files-per-micro-batch": os.environ.get("LAKEHOUSE_MAX_FILES_PER_BATCH", "100"),
 }
 
 
@@ -72,19 +80,19 @@ def start_silver(spark: SparkSession) -> StreamingQuery:
 def start_sessions(spark: SparkSession) -> StreamingQuery:
     edits = spark.readStream.format("iceberg").options(**_ICEBERG_STREAM_READ).load(
         f"lake.{SILVER_EDITS}")
-    sessions = edits_to_sessions(edits.withWatermark("event_time", WATERMARK))
     return (
-        sessions.writeStream.format("iceberg").outputMode("append")
+        edits_to_sessions(edits).writeStream.format("iceberg").outputMode("append")
         .queryName("sessions").trigger(processingTime="30 seconds")
         .option("checkpointLocation", f"{CHECKPOINTS}/sessions")
         .toTable(f"lake.{SILVER_SESSIONS}")
     )
 
 
-def progress_rows(query: StreamingQuery, after_batch: int) -> list[dict[str, Any]]:
-    """Rows for ops.stream_progress from batches newer than `after_batch`."""
+def progress_rows(recent_progress: Iterable[dict[str, Any]],
+                  after_batch: int) -> list[dict[str, Any]]:
+    """Rows for ops.stream_progress from a query's recentProgress, batches > `after_batch`."""
     rows = []
-    for p in query.recentProgress:
+    for p in recent_progress:
         if p["batchId"] <= after_batch:
             continue
         operators = p.get("stateOperators") or []
@@ -106,13 +114,20 @@ def progress_rows(query: StreamingQuery, after_batch: int) -> list[dict[str, Any
 
 def record_progress(spark: SparkSession, queries: list[StreamingQuery],
                     last_batch: dict[str, int]) -> int:
+    """Append new progress rows; `last_batch` advances only after the write succeeded.
+
+    A failed write raises and leaves `last_batch` unchanged, so the next call retries the same
+    batches (as long as they are still within recentProgress, the last 100 per query).
+    """
     rows: list[dict[str, Any]] = []
+    newest: dict[str, int] = {}
     for q in queries:
-        new = progress_rows(q, last_batch.get(q.name, -1))
+        new = progress_rows(q.recentProgress, last_batch.get(q.name, -1))
         if new:
-            last_batch[q.name] = max(r["batch_id"] for r in new)
+            newest[q.name] = max(r["batch_id"] for r in new)
             rows.extend(new)
     if rows:
         spark.createDataFrame(rows, spark.table(f"lake.{STREAM_PROGRESS}").schema) \
             .writeTo(f"lake.{STREAM_PROGRESS}").append()
+    last_batch.update(newest)
     return len(rows)

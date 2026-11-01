@@ -72,6 +72,9 @@ def build_spark(
         # and tiny state stores.
         "spark.sql.shuffle.partitions": "4",
         "spark.sql.session.timeZone": "UTC",
+        # Local mode: the driver JVM runs every task and holds all three queries' planning;
+        # the 1g default is tight for an Iceberg catch-up batch. Applied at JVM launch.
+        "spark.driver.memory": os.environ.get("LAKEHOUSE_DRIVER_MEMORY", "2g"),
         **(extra_conf or {}),
     }
     builder = SparkSession.builder.appName(app_name)

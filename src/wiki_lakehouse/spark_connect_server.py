@@ -3,6 +3,9 @@
 Dagster submits Iceberg maintenance SQL through it, so the orchestrator needs only the thin
 Spark Connect client, not a JVM.
 
+Security: the endpoint has no authentication and runs arbitrary SQL with the catalog's
+credentials. It is reachable only on the internal compose network; never publish its port.
+
     python -m wiki_lakehouse.spark_connect_server
 """
 
@@ -18,6 +21,15 @@ from wiki_lakehouse.spark_session import LakehouseSettings, iceberg_conf
 PORT = "15002"
 
 
+def connect_jar(jars: Path) -> Path:
+    """The Spark Connect server jar the Spark image ships in pyspark's jars directory."""
+    found = sorted(jars.glob("spark-connect_*.jar"))
+    if not found:
+        raise SystemExit(f"spark-connect_*.jar not found in {jars}: "
+                         "run this in the Spark image (docker/spark/Dockerfile)")
+    return found[0]
+
+
 def command() -> list[str]:
     spark_submit = Path(pyspark.__file__).parent / "bin" / "spark-submit"
     conf = {
@@ -31,8 +43,7 @@ def command() -> list[str]:
     for key, value in conf.items():
         args += ["--conf", f"{key}={value}"]
     # spark-submit needs a primary resource; the Connect server class lives in a jar we ship.
-    jars = Path(pyspark.__file__).parent / "jars"
-    return [*args, str(next(jars.glob("spark-connect_*.jar")))]
+    return [*args, str(connect_jar(Path(pyspark.__file__).parent / "jars"))]
 
 
 def main() -> None:

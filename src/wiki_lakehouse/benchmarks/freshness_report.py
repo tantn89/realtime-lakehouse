@@ -33,7 +33,7 @@ latency AS (
     FROM {SILVER_EDITS} e
     JOIN added a ON e._file = a.file_path
     JOIN {SILVER_EDITS}.snapshots s ON s.snapshot_id = a.snapshot_id
-    WHERE e.event_id LIKE '{{prefix}}%'
+    WHERE startswith(e.event_id, :prefix)
 )
 SELECT count(*) AS rows,
        round(percentile(ms, 0.5) / 1000, 1) AS p50_s,
@@ -48,7 +48,8 @@ def _wait_for(spark: SparkSession, prefix: str, expected: int, timeout_s: int) -
     deadline = time.monotonic() + timeout_s
     while True:
         rows = int(spark.sql(f"SELECT count(*) FROM {SILVER_EDITS} "
-                             f"WHERE event_id LIKE '{prefix}%'").collect()[0][0])
+                             "WHERE startswith(event_id, :prefix)",
+                             args={"prefix": prefix}).collect()[0][0])
         if rows >= expected or time.monotonic() > deadline:
             return rows
         time.sleep(5)
@@ -56,16 +57,19 @@ def _wait_for(spark: SparkSession, prefix: str, expected: int, timeout_s: int) -
 
 def freshness(spark: SparkSession, phases: dict[str, int], timeout_s: int) -> None:
     for name, expected in phases.items():
-        seen = _wait_for(spark, f"{name}-", expected, timeout_s)
-        row = spark.sql(FRESHNESS_SQL.replace("{prefix}", f"{name}-")).collect()[0].asDict()
+        prefix = f"{name}-"
+        seen = _wait_for(spark, prefix, expected, timeout_s)
+        row = spark.sql(FRESHNESS_SQL, args={"prefix": prefix}).collect()[0].asDict()
         print("RESULT " + json.dumps({"phase": name, "expected": expected, "seen": seen, **row}),
               flush=True)
 
 
 def file_stats(spark: SparkSession) -> dict[str, float]:
     # split_offsets holds one entry per Parquet row group: the unit readers parallelise on.
+    # A file without it counts as one row group; CASE because size(NULL) is -1, not NULL.
     row = spark.sql(f"SELECT count(*) AS files, avg(file_size_in_bytes) AS avg_bytes, "
-                    f"sum(coalesce(size(split_offsets), 1)) AS row_groups "
+                    "sum(CASE WHEN split_offsets IS NULL THEN 1 ELSE size(split_offsets) END) "
+                    "AS row_groups "
                     f"FROM {SILVER_EDITS}.files").collect()[0]
     return {"files": int(row["files"]), "row_groups": int(row["row_groups"] or 0),
             "avg_kb": round(float(row["avg_bytes"] or 0) / 1024, 1)}
@@ -81,12 +85,20 @@ def compact(spark: SparkSession) -> None:
                                                  "seconds": elapsed}}), flush=True)
 
 
+def parse_phase(value: str) -> tuple[str, int]:
+    """argparse type for `--phase name=N`: N = silver (edit/new) rows expected for the phase."""
+    name, sep, count = value.partition("=")
+    if not sep or not name or not count.isdigit():
+        raise argparse.ArgumentTypeError(f"expected name=N with N a row count, got {value!r}")
+    return name, int(count)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     f = sub.add_parser("freshness")
-    f.add_argument("--phase", action="append", default=[],
-                   help="name=expected_rows; rows have ids starting with '<name>-'")
+    f.add_argument("--phase", action="append", default=[], type=parse_phase,
+                   help="name=N: N silver (edit/new) rows expected, ids starting '<name>-'")
     f.add_argument("--timeout", type=int, default=900)
     sub.add_parser("compact")
     args = parser.parse_args()
@@ -94,7 +106,7 @@ def main() -> None:
     spark = build_spark("benchmark-report")
     spark.sparkContext.setLogLevel("ERROR")
     if args.command == "freshness":
-        phases = {p.split("=")[0]: int(p.split("=")[1]) for p in args.phase}
+        phases = dict(args.phase)
         freshness(spark, phases, args.timeout)
     else:
         compact(spark)

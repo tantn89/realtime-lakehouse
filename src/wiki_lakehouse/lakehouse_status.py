@@ -25,8 +25,10 @@ STATUS_SQL = {
             AS bronze_duplicate_offsets,
           (SELECT count(*) - count(DISTINCT event_id) FROM {SILVER_EDITS})
             AS silver_duplicate_events""",
-    # Freshness: how long after an edit happened it became queryable in silver.
-    "freshness_last_hour": f"""
+    # Event-to-processing latency: processed_at is the silver micro-batch *start*, before the
+    # write and commit, so this understates when an edit became queryable by the batch's
+    # write + commit time. benchmarks/freshness_report.py measures to the commit instead.
+    "processing_latency_last_hour": f"""
         SELECT count(*) AS edits,
                round(percentile(unix_millis(processed_at) - unix_millis(event_time), 0.5)
                      / 1000, 1) AS p50_s,

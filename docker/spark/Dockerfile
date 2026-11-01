@@ -10,8 +10,12 @@ ARG MAVEN=https://repo1.maven.org/maven2
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl procps \
- && rm -rf /var/lib/apt/lists/*
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -s "/usr/lib/jvm/java-17-openjdk-$(dpkg --print-architecture)" /usr/lib/jvm/java-17 \
+ && /usr/lib/jvm/java-17/bin/java -version
+# Arch-independent path: the JDK directory is suffixed -amd64 or -arm64 (Apple Silicon,
+# Graviton), so JAVA_HOME points at a symlink created for whichever was installed.
+ENV JAVA_HOME=/usr/lib/jvm/java-17
 
 # pytest is here so the Spark unit tests run in the same image as the jobs (they need Java).
 RUN pip install --no-cache-dir pyspark==${SPARK} pytest==8.3.3
