@@ -7,6 +7,9 @@ Freshness of a row = commit time of the Iceberg snapshot that added it - its eve
 That is when a reader could first see the edit, not when Spark started the batch. Events
 are re-timed to "now" at publish, so this is the pipeline's latency end to end (producer,
 Kafka, bronze stream, silver stream, commit).
+
+Valid only before compaction: rewritten rows live in files added by the compaction snapshot,
+so they would report its commit time. The benchmark measures first, then compacts.
 """
 
 from __future__ import annotations
