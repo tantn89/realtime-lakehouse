@@ -4,6 +4,8 @@
   external assets so lineage, checks and freshness live in one graph with the dbt marts.
 - dbt gold marts rebuild every 5 minutes; health checks run every 5 minutes; Iceberg
   maintenance runs hourly.
+- A gold refresh is skipped while the previous one is still queued or running: the DuckDB
+  gold file has a single writer, so an overlapping run would fail on its lock.
 """
 
 # No `from __future__ import annotations`: Dagster inspects the real type of `context`.
@@ -16,10 +18,17 @@ from dagster import (
     AssetExecutionContext,
     AssetSelection,
     AssetSpec,
+    DagsterInstance,
+    DagsterRunStatus,
     DefaultScheduleStatus,
     Definitions,
+    RunRequest,
+    RunsFilter,
     ScheduleDefinition,
+    ScheduleEvaluationContext,
+    SkipReason,
     define_asset_job,
+    schedule,
 )
 from dagster_dbt import DbtCliResource, dbt_assets
 
@@ -49,14 +58,32 @@ refresh_gold = define_asset_job("refresh_gold", selection=AssetSelection.assets(
 lakehouse_checks = define_asset_job(
     "lakehouse_checks", selection=AssetSelection.checks(*CHECKS))
 
+IN_FLIGHT = [DagsterRunStatus.QUEUED, DagsterRunStatus.NOT_STARTED, DagsterRunStatus.STARTING,
+             DagsterRunStatus.STARTED]
+
+
+def in_flight_run_id(instance: DagsterInstance, job_name: str) -> str | None:
+    """Id of a run of `job_name` that is queued or running, if any."""
+    runs = instance.get_runs(filters=RunsFilter(job_name=job_name, statuses=IN_FLIGHT), limit=1)
+    return runs[0].run_id if runs else None
+
+
+# Running by default, so `docker compose up` alone gives a working pipeline.
+@schedule(job=refresh_gold, cron_schedule="*/5 * * * *",
+          default_status=DefaultScheduleStatus.RUNNING)
+def refresh_gold_schedule(context: ScheduleEvaluationContext) -> RunRequest | SkipReason:
+    run_id = in_flight_run_id(context.instance, refresh_gold.name)
+    if run_id:
+        return SkipReason(f"refresh_gold run {run_id} is still queued or running")
+    return RunRequest()
+
+
 defs = Definitions(
     assets=[*stream_tables, gold_marts],
     asset_checks=CHECKS,
     jobs=[refresh_gold, lakehouse_checks, iceberg_maintenance],
-    # Running by default, so `docker compose up` alone gives a working pipeline.
     schedules=[
-        ScheduleDefinition(job=refresh_gold, cron_schedule="*/5 * * * *",
-                           default_status=DefaultScheduleStatus.RUNNING),
+        refresh_gold_schedule,
         ScheduleDefinition(job=lakehouse_checks, cron_schedule="*/5 * * * *",
                            default_status=DefaultScheduleStatus.RUNNING),
         ScheduleDefinition(job=iceberg_maintenance, cron_schedule="7 * * * *",

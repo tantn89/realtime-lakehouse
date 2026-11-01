@@ -5,7 +5,7 @@ variable "region" {
 }
 
 variable "aws_profile" {
-  description = "AWS CLI profile Terraform authenticates with (null = default credential chain)."
+  description = "AWS CLI profile Terraform authenticates with. Set to null to use the default credential chain (environment variables, SSO, instance role) instead."
   type        = string
   default     = "lakehouse"
 }
@@ -17,7 +17,7 @@ variable "instance_type" {
 }
 
 variable "max_hours" {
-  description = "The instance powers itself off after this many hours, even if nobody runs destroy."
+  description = "The instance terminates itself after this many hours (compute and EBS stop billing; S3 data stays until destroy)."
   type        = number
   default     = 6
 }

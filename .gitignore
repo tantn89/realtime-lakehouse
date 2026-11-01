@@ -20,3 +20,8 @@ data/recordings/*.jsonl
 plans/
 terraform.tfvars
 *.tfplan
+.env.*
+!.env.example
+*.duckdb
+*.duckdb.wal
+*.auto.tfvars

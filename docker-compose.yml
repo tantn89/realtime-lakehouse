@@ -17,7 +17,8 @@ services:
       - --memory 1G
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
       - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
-    ports: ["19092:19092"]
+    # Published ports bind to loopback only: nothing in this stack authenticates.
+    ports: ["127.0.0.1:19092:19092"]
     volumes: [redpanda:/var/lib/redpanda/data]
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
@@ -30,9 +31,12 @@ services:
       redpanda: {condition: service_healthy}
     entrypoint: ["/bin/bash", "-c"]
     # 3 partitions keyed by wiki; 7-day retention so a stopped pipeline can catch up.
+    # Idempotent: an existing topic is fine, any other failure (broker down) fails the service.
     command:
-      - rpk topic create wiki.recentchange -p 3 -c retention.ms=604800000 -X brokers=redpanda:9092 || true;
-        rpk topic create wiki.recentchange.dlq -p 1 -X brokers=redpanda:9092 || true
+      - for spec in "wiki.recentchange -p 3 -c retention.ms=604800000" "wiki.recentchange.dlq -p 1"; do
+          out=$$(rpk topic create $$spec -X brokers=redpanda:9092 2>&1); status=$$?; echo "$$out";
+          if [ $$status -ne 0 ] && ! grep -q TOPIC_ALREADY_EXISTS <<< "$$out"; then exit 1; fi;
+        done
 
   producer:
     build: {context: ., dockerfile: docker/producer/Dockerfile}
@@ -50,7 +54,7 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:3.80
     command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -master.volumeSizeLimitMB=1024
-    ports: ["8333:8333"]
+    ports: ["127.0.0.1:8333:8333"]
     volumes:
       - seaweedfs:/data
       - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
@@ -90,7 +94,7 @@ services:
     depends_on:
       create-bucket: {condition: service_completed_successfully}
       catalog-db: {condition: service_healthy}
-    ports: ["8181:8181"]
+    ports: ["127.0.0.1:8181:8181"]
     environment:
       <<: *s3-env
       CATALOG_WAREHOUSE: s3://warehouse/
@@ -120,6 +124,7 @@ services:
   # SQL endpoint for orchestration: Dagster runs Iceberg maintenance through it.
   spark-connect:
     image: realtime-lakehouse/spark:local
+    pull_policy: never  # local image, built by the stream service; never on a registry
     restart: unless-stopped
     depends_on:
       iceberg-rest: {condition: service_started}
@@ -139,7 +144,8 @@ services:
       LAKEHOUSE_S3_ENDPOINT: http://seaweedfs:8333
       LAKEHOUSE_KAFKA_BOOTSTRAP: redpanda:9092
       LAKEHOUSE_SPARK_CONNECT: sc://spark-connect:15002
-    ports: ["3000:3000"]
+    # Loopback only: the UI can launch any job. On AWS it is reached through SSM forwarding.
+    ports: ["127.0.0.1:3000:3000"]
     volumes: [dagster-home:/dagster_home, gold:/gold]
     command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000",
               "-m", "wiki_lakehouse.orchestration.definitions"]
@@ -154,6 +160,7 @@ services:
   # Runs schedules; jobs execute in this container.
   dagster-daemon:
     image: realtime-lakehouse/orchestration:local
+    pull_policy: never  # built by the dagster-webserver service
     restart: unless-stopped
     depends_on:
       dagster-webserver: {condition: service_healthy}  # same image; owns the schema migration
@@ -166,6 +173,7 @@ services:
   #   docker compose run --rm spark python -m wiki_lakehouse.smoke_check
   spark:
     image: realtime-lakehouse/spark:local
+    pull_policy: never  # built by the stream service
     profiles: [tools]
     depends_on:
       iceberg-rest: {condition: service_started}

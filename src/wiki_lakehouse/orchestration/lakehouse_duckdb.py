@@ -5,8 +5,6 @@ path-style endpoint; on AWS the Glue Data Catalog's Iceberg REST endpoint with t
 credential chain.
 """
 
-from __future__ import annotations
-
 import os
 
 import duckdb

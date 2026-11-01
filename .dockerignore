@@ -9,3 +9,13 @@ terraform
 # Recordings can be large; only the committed sample ships in images (for replay demos).
 data/**
 !data/recordings/sample.jsonl
+# Local artefacts that must never be baked into an image or sent as build context.
+build
+.env
+.env.*
+.claude
+dbt/target
+dbt/logs
+dbt/.user.yml
+**/*.duckdb
+**/*.duckdb.wal

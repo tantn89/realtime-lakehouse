@@ -4,11 +4,43 @@
 set -euxo pipefail
 exec > >(tee -a /var/log/lakehouse-bootstrap.log) 2>&1
 
-# Cost guard: power off after the run window even if nobody runs terraform destroy.
-shutdown -h +${max_minutes}
+# Cost guard: power off after the run window even if nobody runs terraform destroy. The
+# instance's shutdown behaviour is "terminate", so this ends compute and EBS billing; S3 and
+# Glue keep the data until destroy. A systemd timer at an absolute time, not `shutdown +N`,
+# so a reboot does not cancel it (Persistent=true fires at boot if the deadline has passed).
+deadline="$(date -u -d "+${max_minutes} minutes" '+%Y-%m-%d %H:%M:%S UTC')"
+cat > /etc/systemd/system/lakehouse-poweroff.service <<'EOF'
+[Unit]
+Description=Lakehouse cost guard: power off (terminates the instance)
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl poweroff
+EOF
+cat > /etc/systemd/system/lakehouse-poweroff.timer <<EOF
+[Unit]
+Description=Lakehouse cost guard deadline
+[Timer]
+OnCalendar=$deadline
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now lakehouse-poweroff.timer
 
-curl -fsSL https://get.docker.com | sh
-snap install aws-cli --classic
+# A transient network error must not abort the bootstrap and leave an idle instance.
+retry() {
+  for attempt in 1 2 3 4 5; do
+    "$@" && return 0
+    echo "attempt $attempt failed: $*"
+    sleep 15
+  done
+  return 1
+}
+
+retry curl -fsSL -o /tmp/get-docker.sh https://get.docker.com
+retry sh /tmp/get-docker.sh
+retry snap install aws-cli --classic
 
 mkdir -p /opt/lakehouse
 cd /opt/lakehouse

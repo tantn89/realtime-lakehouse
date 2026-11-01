@@ -28,6 +28,33 @@ resource "aws_s3_bucket_public_access_block" "lakehouse" {
   restrict_public_buckets = true
 }
 
+# Every client here (Spark S3FileIO, DuckDB, the AWS CLI, Athena) uses HTTPS; refuse
+# anything that does not.
+data "aws_iam_policy_document" "tls_only" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.lakehouse.arn, "${aws_s3_bucket.lakehouse.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "tls_only" {
+  bucket = aws_s3_bucket.lakehouse.id
+  policy = data.aws_iam_policy_document.tls_only.json
+  # The public access block must exist first; both edit the bucket's policy settings.
+  depends_on = [aws_s3_bucket_public_access_block.lakehouse]
+}
+
 resource "aws_s3_object" "bundle" {
   bucket = aws_s3_bucket.lakehouse.id
   key    = local.bundle_key
@@ -143,12 +170,15 @@ resource "aws_security_group" "instance" {
 }
 
 resource "aws_instance" "lakehouse" {
-  ami                                  = data.aws_ssm_parameter.ubuntu.value
-  instance_type                        = var.instance_type
-  iam_instance_profile                 = aws_iam_instance_profile.instance.name
-  vpc_security_group_ids               = [aws_security_group.instance.id]
-  associate_public_ip_address          = true # outbound internet without a NAT gateway
-  instance_initiated_shutdown_behavior = "stop"
+  ami                         = data.aws_ssm_parameter.ubuntu.value
+  instance_type               = var.instance_type
+  iam_instance_profile        = aws_iam_instance_profile.instance.name
+  vpc_security_group_ids      = [aws_security_group.instance.id]
+  associate_public_ip_address = true # outbound internet without a NAT gateway
+  # The cost guard powers the instance off from inside (user-data); that terminates it, so
+  # neither compute nor the EBS volume keeps billing. The data is in S3 and Glue, which stay
+  # until destroy (destroy still works on a terminated instance).
+  instance_initiated_shutdown_behavior = "terminate"
 
   metadata_options {
     http_tokens = "required" # IMDSv2 only
@@ -173,6 +203,12 @@ resource "aws_instance" "lakehouse" {
 
   tags = {
     Name = "realtime-lakehouse"
+  }
+
+  lifecycle {
+    # The AMI comes from SSM "current": a new Ubuntu release must not replace a running
+    # instance when an unrelated setting (say, the budget) is re-applied.
+    ignore_changes = [ami]
   }
 
   depends_on = [aws_s3_object.bundle, aws_glue_catalog_database.namespace]

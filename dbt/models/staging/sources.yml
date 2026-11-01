@@ -5,11 +5,8 @@ sources:
     description: Iceberg tables written by the Spark streams, read through the REST catalog.
     database: lake
     schema: silver
-    loaded_at_field: processed_at
-    # The stream commits every ~10 s; anything older than a few minutes means it is stuck.
-    freshness:
-      warn_after: {count: 5, period: minute}
-      error_after: {count: 15, period: minute}
+    # No dbt source freshness here: nothing runs `dbt source freshness`. Silver freshness is
+    # the Dagster asset check silver_is_fresh (orchestration/lakehouse_checks.py), every 5 min.
     tables:
       - name: edits
         description: One row per Wikimedia recentchange event, deduplicated on event_id.
@@ -18,4 +15,3 @@ sources:
             tests: [not_null]
       - name: editor_sessions
         description: Closed editor sessions (session window, 20-minute gap).
-        freshness: null  # sessions close 30+ minutes after they start; freshness is not meaningful

@@ -22,6 +22,40 @@ jobs:
       - run: mypy
       - run: pytest
 
+  # Validate needs no credentials: variables are unknown, the provider is not configured.
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=terraform fmt -check
+      - run: terraform -chdir=terraform init -backend=false
+      - run: terraform -chdir=terraform validate
+
+  # Builds the orchestration image (which runs `dbt parse`) and loads the Dagster
+  # definitions in it, and checks that every compose overlay still renders.
+  orchestration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Dummy values: the AWS overlay requires them, `config` only renders the file.
+      AWS_REGION: ap-southeast-2
+      LAKEHOUSE_WAREHOUSE: s3://example-bucket/warehouse/
+      LAKEHOUSE_GLUE_ACCOUNT_ID: "123456789012"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose files render
+        run: |
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.it.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.aws.yml config -q
+      - name: Build the orchestration image
+        run: docker compose build dagster-webserver
+      - name: Load the Dagster definitions
+        run: >
+          docker compose run --rm --no-deps -T dagster-webserver
+          dagster definitions validate -m wiki_lakehouse.orchestration.definitions
+
   # Builds the images, runs the Spark unit tests inside the Spark image, then the full
   # crash-and-verify scenario: SIGKILL the stream mid-backlog and prove exactly-once.
   spark-and-exactly-once:
