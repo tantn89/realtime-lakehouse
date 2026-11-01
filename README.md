@@ -8,6 +8,8 @@ Iceberg tables and gold marts with **exactly-once writes, a data contract with a
 queue, late-data handling, table maintenance and asset checks**. It proves each of those
 claims with a script you can rerun. The same tables can be read from Spark, DuckDB and Athena.
 
+> **Write-up:** [Proving exactly-once by killing the stream mid-backlog](https://dev.to/tantn89/proving-exactly-once-by-killing-the-stream-mid-backlog-8j3)
+
 ![ci](https://github.com/tantn89/realtime-lakehouse/actions/workflows/ci.yml/badge.svg)
 ![python](https://img.shields.io/badge/python-3.11-blue)
 ![spark](https://img.shields.io/badge/spark-3.5-orange)
